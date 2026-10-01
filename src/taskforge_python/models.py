@@ -33,13 +33,15 @@ class Job:
     result: object | None = None
     error: str | None = None
     worker_id: str | None = None
+    error_type: str | None = None
 
     def mark_running(self, worker_id: str) -> None:
         if self.status not in {JobStatus.QUEUED, JobStatus.RETRYING}:
             raise ValueError("Only queued or retrying jobs can start")
 
         self.status = JobStatus.RUNNING
-        self.started_at = datetime.now(UTC)
+        if self.started_at is None:
+            self.started_at = datetime.now(UTC)
         self.attempt += 1
         self.worker_id = worker_id
         self.error = None
