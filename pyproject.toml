@@ -1,0 +1,17 @@
+[project]
+name = "taskforge-python"
+version = "0.1.0"
+description = "An asynchronous job processing and monitoring platform built with Python."
+readme = "README.md"
+authors = [
+    { name = "daniel", email = "amirhosseinnoorozi@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+taskforge-python = "taskforge_python:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
