@@ -169,3 +169,85 @@ async def test_missing_file_is_permanent(tmp_path: Path, job_type):
     async with httpx.AsyncClient() as client:
         with pytest.raises(PermanentJobError):
             await AsyncHandlers(client).execute(Job(job_type, {"path": str(tmp_path / "missing")}))
+
+
+async def test_cancel_during_download_file_creation_cleans_resources(tmp_path, monkeypatch):
+    import asyncio
+    import tempfile
+    import threading
+
+    original = tempfile.NamedTemporaryFile
+    created = threading.Event()
+    release = threading.Event()
+    opened = []
+
+    def slow_create(*args, **kwargs):
+        file = original(*args, **kwargs)
+        opened.append(file)
+        created.set()
+        release.wait(2)
+        return file
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", slow_create)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"hello"))
+    ) as client:
+        task = asyncio.create_task(
+            AsyncHandlers(client).execute(
+                Job(
+                    JobType.DOWNLOAD_FILE,
+                    {
+                        "url": "https://example.com",
+                        "path": str(tmp_path / "download.txt"),
+                    },
+                )
+            )
+        )
+        assert await asyncio.to_thread(created.wait, 2)
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    try:
+        assert list(tmp_path.iterdir()) == []
+        assert all(file.closed for file in opened)
+    finally:
+        for file in opened:
+            file.close()
+
+
+async def test_cancel_during_download_publication_removes_output(tmp_path, monkeypatch):
+    import asyncio
+    import os
+    import threading
+
+    original = os.link
+    published = threading.Event()
+    release = threading.Event()
+
+    def slow_link(*args, **kwargs):
+        original(*args, **kwargs)
+        published.set()
+        release.wait(2)
+
+    monkeypatch.setattr(os, "link", slow_link)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"hello"))
+    ) as client:
+        task = asyncio.create_task(
+            AsyncHandlers(client).execute(
+                Job(
+                    JobType.DOWNLOAD_FILE,
+                    {
+                        "url": "https://example.com",
+                        "path": str(tmp_path / "download.txt"),
+                    },
+                )
+            )
+        )
+        assert await asyncio.to_thread(published.wait, 2)
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert list(tmp_path.iterdir()) == []

@@ -126,19 +126,24 @@ class AsyncHandlers:
         if await run_blocking(destination.exists):
             raise PermanentJobError("Download destination already exists")
         # A temporary file in the same directory allows atomic publication.
-        file = await run_blocking(
-            tempfile.NamedTemporaryFile,
-            "wb",
-            -1,
-            None,
-            None,
-            ".part",
-            "taskforge-",
-            str(destination.parent),
-            False,
+        opening = asyncio.create_task(
+            asyncio.to_thread(
+                tempfile.NamedTemporaryFile,
+                mode="wb",
+                suffix=".part",
+                prefix="taskforge-",
+                dir=destination.parent,
+                delete=False,
+            )
         )
+        file = None
         size = 0
         try:
+            try:
+                file = await asyncio.shield(opening)
+            except asyncio.CancelledError:
+                file = await opening
+                raise
             async for chunk in response.aiter_bytes(chunk_size=65536):
                 size += len(chunk)
                 if size > limit:
@@ -148,6 +153,16 @@ class AsyncHandlers:
             # link() fails if another job has already created the destination.
             await run_blocking(os.link, file.name, destination)
             return {"path": str(destination), "bytes": size, "status_code": response.status_code}
+        except asyncio.CancelledError:
+            if file is not None:
+                try:
+                    published = await run_blocking(os.path.samefile, file.name, destination)
+                except FileNotFoundError:
+                    published = False
+                if published:
+                    await run_blocking(destination.unlink)
+            raise
         finally:
-            await run_blocking(file.close)
-            await run_blocking(Path(file.name).unlink, True)
+            if file is not None:
+                await run_blocking(file.close)
+                await run_blocking(Path(file.name).unlink, True)

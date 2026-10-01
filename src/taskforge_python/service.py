@@ -69,9 +69,17 @@ class JobService:
 
     async def stop(self) -> None:
         self.running = False
-        for task in self.worker_tasks:
-            task.cancel()
-        await asyncio.gather(*self.worker_tasks, return_exceptions=True)
+        async with self.control_lock:
+            # Finish any existing cancellation before closing shared resources.
+            active = list(self.active_tasks.values())
+            for task in active:
+                if not task.cancelling():
+                    task.cancel()
+            await asyncio.gather(*active, return_exceptions=True)
+            for task in self.worker_tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*self.worker_tasks, return_exceptions=True)
         if self.owns_client and self.client is not None:
             await self.client.aclose()
             self.client = None
@@ -111,7 +119,10 @@ class JobService:
             else:
                 job.mark_cancelled()
                 await self.repository.save(job)
-            return await self.get(job_id)
+            result = await self.get(job_id)
+            if result.status != JobStatus.CANCELLED:
+                raise ValueError("Job finished before cancellation could take effect")
+            return result
 
     async def _worker(self, worker_id: str, runner: AsyncJobRunner) -> None:
         while self.running:

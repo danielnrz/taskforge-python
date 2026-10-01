@@ -257,3 +257,81 @@ async def test_shutdown_stops_active_workers(tmp_path):
         await asyncio.wait_for(started.wait(), 2)
         await asyncio.wait_for(service.stop(), 2)
         assert all(worker["state"] == "stopped" for worker in service.workers())
+
+
+@pytest.mark.parametrize("operation", ["cancel", "shutdown"])
+async def test_terminal_save_survives_cancellation(tmp_path, monkeypatch, operation):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    repository = JobRepository(f"sqlite+aiosqlite:///{tmp_path / 'jobs.db'}")
+    original = repository.save
+
+    async def delayed_save(job):
+        if job.status == JobStatus.SUCCEEDED:
+            entered.set()
+            await release.wait()
+        await original(job)
+
+    monkeypatch.setattr(repository, "save", delayed_save)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200))
+    ) as client:
+        service = JobService(repository, client=client, worker_count=1)
+        await service.start()
+        job = await service.submit(JobType.HTTP_FETCH, {"url": "https://example.com"})
+        await asyncio.wait_for(entered.wait(), 2)
+        action = asyncio.create_task(
+            service.cancel(job.id) if operation == "cancel" else service.stop()
+        )
+        await asyncio.sleep(0.02)
+        release.set()
+        try:
+            if operation == "cancel":
+                with pytest.raises(ValueError, match="finished"):
+                    await action
+                assert service.workers()[0]["state"] != "stopped"
+                await service.stop()
+            else:
+                await action
+            await repository.initialize()
+            assert (await repository.get(job.id)).status == JobStatus.SUCCEEDED
+        finally:
+            release.set()
+            await service.stop()
+
+
+async def test_shutdown_waits_for_in_progress_file_cancellation(tmp_path, monkeypatch):
+    import threading
+
+    from taskforge_python.handlers import FileChecksumHandler
+
+    entered = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def slow_checksum(self, path):
+        entered.set()
+        release.wait(3)
+        finished.set()
+        return "checksum"
+
+    monkeypatch.setattr(FileChecksumHandler, "execute", slow_checksum)
+    async with httpx.AsyncClient() as client:
+        service = JobService(
+            JobRepository(f"sqlite+aiosqlite:///{tmp_path / 'jobs.db'}"), client=client
+        )
+        await service.start()
+        job = await service.submit(JobType.FILE_CHECKSUM, {"path": str(tmp_path / "sample")})
+        assert await asyncio.to_thread(entered.wait, 2)
+        cancellation = asyncio.create_task(service.cancel(job.id))
+        async with asyncio.timeout(2):
+            while not service.active_tasks[job.id].cancelling():
+                await asyncio.sleep(0)
+        shutdown = asyncio.create_task(service.stop())
+        await asyncio.sleep(0.02)
+        try:
+            assert not shutdown.done()
+        finally:
+            release.set()
+            await asyncio.gather(cancellation, shutdown)
+        assert finished.is_set()

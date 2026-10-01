@@ -59,7 +59,12 @@ class AsyncJobRunner:
             if job.status in {JobStatus.RUNNING, JobStatus.RETRYING, JobStatus.QUEUED}:
                 job.mark_cancelled()
         finally:
-            await save(job)
+            # Once execution finishes, persist its outcome even if cancellation arrives.
+            saving = asyncio.ensure_future(save(job))
+            try:
+                await asyncio.shield(saving)
+            except asyncio.CancelledError:
+                await saving
             logger.info(
                 "job=%s worker=%s attempt=%s event=%s runtime=%.3f error=%s",
                 job.id,
