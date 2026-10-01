@@ -7,7 +7,15 @@ authors = [
     { name = "daniel", email = "amirhosseinnoorozi@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "pandas>=3.0.6",
+    "sqlalchemy>=2.0,<3",
+    "streamlit>=1.40",
+    "uvicorn>=0.30",
+]
 
 [project.scripts]
 taskforge-python = "taskforge_python:main"
@@ -18,5 +26,25 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "mypy>=2.3.1",
+    "pandas-stubs>=3.0.5.260914",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.9",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+strict = true

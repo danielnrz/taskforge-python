@@ -29,6 +29,7 @@ def test_runner_marks_missing_file_as_failed(tmp_path) -> None:
     assert job.error is not None
     assert job.result is None
 
+
 def test_runner_marks_unsupported_job_as_failed() -> None:
     job = Job(JobType.HTTP_FETCH, {"url": "https://example.com"})
     runner = JobRunner()
