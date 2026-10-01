@@ -1539,7 +1539,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "pandas", specifier = ">=3.0.6" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
-    { name = "streamlit", specifier = ">=1.40" },
+    { name = "streamlit", specifier = ">=1.50" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 
