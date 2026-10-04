@@ -1,0 +1,40 @@
+services:
+  backend:
+    build: .
+    image: taskforge:local
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - taskforge-data:/app/data
+
+  dashboard:
+    image: taskforge:local
+    build: .
+    command: ["streamlit", "run", "dashboard/app.py", "--server.address", "0.0.0.0"]
+    environment:
+      TASKFORGE_API_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+
+  demo:
+    image: taskforge:local
+    build: .
+    profiles: ["demo"]
+    command: ["uvicorn", "scripts.demo_server:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "127.0.0.1:8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/hello', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+
+volumes:
+  taskforge-data:
