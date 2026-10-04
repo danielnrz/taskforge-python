@@ -166,12 +166,17 @@ def monitor() -> None:
         }
         for job in filtered
     ]
-    st.dataframe(
-        pd.DataFrame(rows),
-        hide_index=True,
-        width="stretch",
-        column_config={"Created": st.column_config.DatetimeColumn(format="HH:mm:ss")},
-    )
+    table = pd.DataFrame(rows)
+    if not table.empty:
+        table["Created"] = pd.to_datetime(table["Created"], utc=True)
+        st.dataframe(
+            table,
+            hide_index=True,
+            width="stretch",
+            column_config={"Created": st.column_config.DatetimeColumn(format="HH:mm:ss")},
+        )
+    else:
+        st.info("No jobs match this status. Choose another filter to see recent jobs.")
     details, charts = st.columns([3, 2], gap="large")
     with details:
         selected = st.selectbox(

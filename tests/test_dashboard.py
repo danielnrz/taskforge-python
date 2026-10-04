@@ -67,3 +67,20 @@ def test_dashboard_handles_unavailable_backend(monkeypatch):
     app = AppTest.from_file(str(Path("dashboard/app.py").resolve()), default_timeout=15).run()
     assert not app.exception
     assert any("Cannot reach the backend" in error.value for error in app.error)
+
+
+def test_dashboard_shows_empty_status_filter(backend, monkeypatch):
+    monkeypatch.setenv("TASKFORGE_API_URL", backend)
+    with httpx.Client(base_url=backend) as client:
+        response = client.post(
+            "/jobs",
+            json={
+                "job_type": "http_fetch",
+                "payload": {"url": "https://example.com"},
+            },
+        )
+        response.raise_for_status()
+    app = AppTest.from_file(str(Path("dashboard/app.py").resolve()), default_timeout=15).run()
+    app.segmented_control[0].set_value("Failed").run()
+    assert not app.exception
+    assert any("No jobs match this status" in item.value for item in app.info)
