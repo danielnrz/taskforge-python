@@ -18,6 +18,17 @@ using free, open-source tools and needs no API keys, paid services or hosting.
   durations, retry counts and failure types.
 - Behavior tests, ruff, strict mypy checks, GitHub Actions and optional Docker.
 
+## Dashboard
+
+Status counts, worker activity and recent job results from the local demo.
+
+![TaskForge dashboard showing job metrics, worker activity, outcomes and recent jobs](docs/screenshots/dashboard-overview.png)
+
+The dashboard refreshes as jobs run. Here, three workers are processing HTTP
+requests while additional jobs wait in the queue.
+
+![TaskForge dashboard with three busy workers and jobs waiting in the queue](docs/screenshots/dashboard-processing.png)
+
 ## Quick start
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
