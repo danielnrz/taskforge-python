@@ -26,18 +26,26 @@ h3 {letter-spacing: -.3px;}
 
 
 def show_error(exc: httpx.HTTPError) -> None:
-    if isinstance(exc, httpx.HTTPStatusError):
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code not in {502, 503, 504}:
         st.error(f"Backend returned {exc.response.status_code}: {exc.response.text[:500]}")
     else:
-        st.error("Cannot reach the backend. Start the API and check its address in the sidebar.")
+        st.info("Backend is starting. This free demo may take up to a minute to wake up.")
+        st.caption(
+            "Automatic refresh will retry. For local use, check the API and backend address."
+        )
 
+
+configured_url = os.getenv("TASKFORGE_API_URL")
+if not configured_url:
+    try:
+        configured_url = str(st.secrets.get("TASKFORGE_API_URL", "http://127.0.0.1:8000"))
+    except FileNotFoundError:
+        configured_url = "http://127.0.0.1:8000"
 
 with st.sidebar:
     st.markdown("### ⚙ TaskForge")
-    st.caption("LOCAL JOB PROCESSING")
-    base_url = st.text_input(
-        "Backend address", os.getenv("TASKFORGE_API_URL", "http://127.0.0.1:8000")
-    )
+    st.caption("ASYNC JOB PROCESSING")
+    base_url = st.text_input("Backend address", configured_url)
     st.divider()
     st.markdown("### Submit a job")
     job_type = st.selectbox(
@@ -46,7 +54,13 @@ with st.sidebar:
     with st.form("new_job"):
         payload: dict[str, object] = {}
         if job_type in {"http_fetch", "download_file"}:
-            payload["url"] = st.text_input("URL", "http://127.0.0.1:8001/hello")
+            demo_url = (
+                "http://127.0.0.1:8001/hello"
+                if base_url.startswith("http://127.0.0.1:")
+                else f"{base_url.rstrip('/')}/demo/"
+                f"{'download' if job_type == 'download_file' else 'hello'}"
+            )
+            payload["url"] = st.text_input("URL", demo_url)
             payload["timeout"] = st.number_input("Timeout (seconds)", 0.1, 120.0, 10.0)
         if job_type != "http_fetch":
             default_path = {
@@ -87,6 +101,8 @@ def monitor() -> None:
             overview = fetch_overview(client)
     except httpx.HTTPError as exc:
         show_error(exc)
+        if st.button("Retry connection"):
+            st.rerun()
         return
     metrics = overview["metrics"]
     jobs: list[dict[str, Any]] = overview["jobs"]

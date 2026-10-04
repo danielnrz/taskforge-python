@@ -66,7 +66,9 @@ def test_dashboard_handles_unavailable_backend(monkeypatch):
     monkeypatch.setenv("TASKFORGE_API_URL", "http://127.0.0.1:1")
     app = AppTest.from_file(str(Path("dashboard/app.py").resolve()), default_timeout=15).run()
     assert not app.exception
-    assert any("Cannot reach the backend" in error.value for error in app.error)
+    assert not app.error
+    assert any("Backend is starting" in item.value for item in app.info)
+    assert any(button.label == "Retry connection" for button in app.button)
 
 
 def test_dashboard_shows_empty_status_filter(backend, monkeypatch):
@@ -84,3 +86,38 @@ def test_dashboard_shows_empty_status_filter(backend, monkeypatch):
     app.segmented_control[0].set_value("Failed").run()
     assert not app.exception
     assert any("No jobs match this status" in item.value for item in app.info)
+
+
+def test_dashboard_reads_root_level_secret(backend, monkeypatch):
+    monkeypatch.delenv("TASKFORGE_API_URL", raising=False)
+    app = AppTest.from_file(str(Path("dashboard/app.py").resolve()), default_timeout=15)
+    app.secrets["TASKFORGE_API_URL"] = backend
+    app.run()
+    assert not app.exception
+    assert not app.error
+    assert app.text_input[0].value == backend
+    assert next(metric for metric in app.metric if metric.label == "Total jobs").value == "0"
+
+
+@pytest.mark.parametrize("status", [200, 502, 503, 504])
+def test_dashboard_handles_wake_responses(status, monkeypatch):
+    from taskforge_python import dashboard_client
+
+    original = dashboard_client.fetch_overview
+
+    def wake_response(client):
+        with httpx.Client(
+            base_url="http://starting",
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(status, text="<html>Starting</html>")
+            ),
+        ) as waking:
+            return original(waking)
+
+    monkeypatch.setattr(dashboard_client, "fetch_overview", wake_response)
+    app = AppTest.from_file(str(Path("dashboard/app.py").resolve()), default_timeout=15).run()
+    assert not app.exception
+    assert not app.error
+    assert any("Backend is starting" in item.value for item in app.info)
+    next(button for button in app.button if button.label == "Retry connection").click().run()
+    assert not app.exception

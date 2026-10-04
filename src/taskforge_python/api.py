@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -9,6 +10,7 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
+from taskforge_python.demo import prepare_files, router, seed_jobs
 from taskforge_python.exceptions import JobNotFoundError
 from taskforge_python.models import JobStatus
 from taskforge_python.repository import JobRepository
@@ -29,11 +31,16 @@ def create_app(service: JobService | None = None) -> FastAPI:
             JobRepository(database_url), worker_count=int(os.getenv("TASKFORGE_WORKERS", "3"))
         )
     jobs = service
+    demo_mode = os.getenv("TASKFORGE_DEMO_MODE", "false").lower() == "true"
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
+            if demo_mode:
+                await asyncio.to_thread(prepare_files)
             await jobs.start()
+            if demo_mode:
+                await seed_jobs(jobs)
             yield
         finally:
             await jobs.stop()
@@ -44,6 +51,9 @@ def create_app(service: JobService | None = None) -> FastAPI:
         lifespan=lifespan,
         description="A local async job processing and monitoring platform.",
     )
+
+    if demo_mode:
+        app.include_router(router)
 
     @app.exception_handler(JobNotFoundError)
     async def not_found(request: Request, exc: JobNotFoundError) -> JSONResponse:

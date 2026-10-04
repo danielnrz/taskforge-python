@@ -7,7 +7,6 @@ textColor = "#e4ecf6"
 font = "sans serif"
 
 [server]
-address = "127.0.0.1"
 headless = true
 
 [browser]

@@ -8,3 +8,5 @@ data
 *.db-*
 .env
 .superpowers
+
+.streamlit/secrets.toml

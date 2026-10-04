@@ -49,3 +49,16 @@ def test_dashboard_preserves_backend_validation_errors():
         pytest.raises(httpx.HTTPStatusError),
     ):
         submit_job(client, "file_checksum", {"path": ""})
+
+
+def test_dashboard_handles_non_json_wake_page():
+    with (
+        httpx.Client(
+            base_url="http://backend",
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, text="<html>Starting service</html>")
+            ),
+        ) as client,
+        pytest.raises(httpx.DecodingError),
+    ):
+        fetch_overview(client)

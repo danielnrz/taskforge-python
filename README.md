@@ -51,7 +51,7 @@ uv run taskforge-python
 In another terminal, start the dashboard:
 
 ```bash
-uv run streamlit run dashboard/app.py
+uv run streamlit run dashboard/app.py --server.address 127.0.0.1
 ```
 
 - Dashboard: <http://127.0.0.1:8501>
@@ -86,6 +86,96 @@ In the dashboard, watch the workers become busy, inspect the CSV result, filter
 failed jobs and compare their error types. The retrying HTTP job completes on
 its second attempt. Toggle automatic refresh to pause the view. You can also
 submit jobs and cancel queued, running or retrying jobs from the dashboard.
+
+## Live demo deployment
+
+The public dashboard is prepared for **Streamlit Community Cloud**, with its
+backend on a **Render Free Web Service**. Deployment URLs will be added after
+setup. The free backend may take about one minute to wake after inactivity;
+the dashboard shows a starting message and retries automatically.
+
+Render Free uses an ephemeral filesystem: SQLite history and downloaded files
+can disappear on restart, redeploy or spin-down. With `TASKFORGE_DEMO_MODE=true`,
+startup restores missing sample files and adds a checksum, a valid CSV summary
+and a deliberately malformed CSV job **only when the database is empty**.
+Existing files and job history are preserved when present. Refreshing the
+dashboard does not add jobs. These storage limits affect the hosted demo;
+local SQLite persistence and the single-process worker design remain unchanged.
+
+The hosted demo also exposes `/demo/hello` and `/demo/download` as HTTP targets.
+Use these with the dashboard's HTTP fetch/download forms; file jobs can use
+`data/demo/sample.txt` and `data/demo/scores.csv`. Downloads need a new destination
+filename each time. This is disposable, public sample data; do not submit private
+files, credentials or sensitive URLs.
+
+### Render settings
+
+Log in to Render and connect the GitHub repository. You can create a Blueprint
+from the included `render.yaml`, or create a **Web Service** with these settings:
+
+| Setting | Value |
+| --- | --- |
+| Repository | `https://github.com/danielnrz/taskforge-python` |
+| Branch | `main` |
+| Root directory | Leave blank (repository root) |
+| Runtime | Python 3 |
+| Instance plan | **Free** |
+| Build command | `uv sync --locked --no-dev` |
+| Start command | `uv run --no-sync uvicorn taskforge_python.api:create_app --factory --host 0.0.0.0 --port $PORT --workers 1` |
+| Health check path | `/health` |
+
+Set these environment variables (also included in `render.yaml`):
+
+```text
+PYTHON_VERSION=3.12.14
+UV_VERSION=0.12.21
+TASKFORGE_DEMO_MODE=true
+TASKFORGE_WORKERS=3
+TASKFORGE_DATABASE_URL=sqlite+aiosqlite:///data/taskforge.db
+```
+
+Render supplies `PORT`; the start command binds to that port on all interfaces.
+Keep one uvicorn process. Do not add a persistent disk, database service or paid
+instance. Use the free workspace without a payment method so exceeding included
+usage suspends service/builds instead of purchasing extra capacity. Free hosting
+has usage limits and does not guarantee uninterrupted availability. See
+[Render's free service limits](https://render.com/docs/free).
+
+To check the hosted-demo mode locally:
+
+```bash
+TASKFORGE_DEMO_MODE=true uv run taskforge-python
+```
+
+This seeds an empty database only. Use a separate SQLite path if you want to keep
+an existing local history separate; create its parent directory first.
+
+### Streamlit Community Cloud settings
+
+Log in to Streamlit Community Cloud, authorize GitHub access, and choose
+**Create app**:
+
+| Setting | Value |
+| --- | --- |
+| Repository | `danielnrz/taskforge-python` |
+| Branch | `main` |
+| Main file path | `dashboard/app.py` |
+| Python version (Advanced settings) | **3.12** |
+
+In **Advanced settings → Secrets**, add this root-level TOML entry, replacing the
+placeholder with the HTTPS URL assigned to the Render backend (without `/docs`):
+
+```toml
+TASKFORGE_API_URL = "<your Render backend URL>"
+```
+
+The dashboard reads this secret or the environment variable of the same name.
+An environment variable takes precedence. Do not commit `.streamlit/secrets.toml`.
+Community Cloud installs dependencies from the root `uv.lock`, so a second
+`requirements.txt` is unnecessary; `pyproject.toml` and `uv.lock` remain the
+sources for local development. See [Community Cloud dependency support](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies).
+The Streamlit server address is left configurable for cloud hosting; the local
+command above explicitly binds it to loopback.
 
 ## Architecture
 
@@ -183,6 +273,7 @@ Configuration:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `TASKFORGE_DATABASE_URL` | `sqlite+aiosqlite:///data/taskforge.db` | SQLite database location |
+| `TASKFORGE_DEMO_MODE` | `false` | Restore hosted sample files and seed an empty database |
 | `TASKFORGE_WORKERS` | `3` | Worker coroutines, between 1 and 16 |
 | `TASKFORGE_API_URL` | `http://127.0.0.1:8000` | Dashboard backend address |
 
@@ -191,7 +282,7 @@ different API port, run uvicorn directly:
 
 ```bash
 uv run uvicorn taskforge_python.api:create_app --factory --host 127.0.0.1 --port 8002
-TASKFORGE_API_URL=http://127.0.0.1:8002 uv run streamlit run dashboard/app.py
+TASKFORGE_API_URL=http://127.0.0.1:8002 uv run streamlit run dashboard/app.py --server.address 127.0.0.1
 ```
 
 ## API
@@ -280,6 +371,7 @@ src/taskforge_python/
   service.py             Queue, workers and job operations
   schemas.py             API request and response models
   api.py                 FastAPI routes and lifespan
+  demo.py                Optional hosted sample inputs and HTTP targets
   dashboard_client.py    HTTP calls used by the dashboard
   exceptions.py          Application errors
 dashboard/app.py         Streamlit monitoring interface
@@ -293,8 +385,10 @@ tests/                   Behavior and integration tests
 - V1 supports one backend process. Do not use multiple uvicorn workers or share
   the database between running backend instances. There is no distributed queue.
 - This is a trusted local tool without authentication. Jobs can read local files,
-  write downloads and request user-provided URLs. Keep the services on loopback;
-  network exposure would require authentication and filesystem/network controls.
+  write downloads and request user-provided URLs. Keep normal use on loopback.
+  The hosted portfolio demo is disposable and
+  must contain only public samples; broader use would require authentication
+  and filesystem/network controls.
 - The queue has no size limit. History queries load stored jobs into memory, and
   CSV summaries retain numeric values in memory. These choices suit small local
   workloads; pagination, retention and streaming aggregates would be useful next.

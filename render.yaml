@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: taskforge-backend
+    runtime: python
+    plan: free
+    repo: https://github.com/danielnrz/taskforge-python
+    branch: main
+    buildCommand: uv sync --locked --no-dev
+    startCommand: uv run --no-sync uvicorn taskforge_python.api:create_app --factory --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.14
+      - key: UV_VERSION
+        value: 0.12.21
+      - key: TASKFORGE_DEMO_MODE
+        value: "true"
+      - key: TASKFORGE_WORKERS
+        value: "3"
+      - key: TASKFORGE_DATABASE_URL
+        value: sqlite+aiosqlite:///data/taskforge.db

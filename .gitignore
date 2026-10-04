@@ -18,3 +18,6 @@ wheels/
 *.db-*
 data/
 .env
+
+# Local dashboard secrets
+.streamlit/secrets.toml

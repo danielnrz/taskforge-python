@@ -5,7 +5,12 @@ import httpx
 
 def _json(response: httpx.Response) -> Any:
     response.raise_for_status()
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise httpx.DecodingError(
+            "Backend returned non-JSON content", request=response.request
+        ) from exc
 
 
 def fetch_overview(client: httpx.Client) -> dict[str, Any]:
